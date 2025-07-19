@@ -33,7 +33,6 @@ def train_and_predict(features, target, days):
     y_train = target[:-days]
     X_test = features[-days:]
 
-    # XGBoost用にDMatrixへ変換
     model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100)
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
@@ -49,7 +48,6 @@ features, target = create_features(df)
 days = st.slider("予測日数", 5, 60, 30)
 dates, preds, model = train_and_predict(features, target, days)
 
-# グラフ描画
 fig, ax = plt.subplots()
 ax.plot(df.index[-days:], df["Close"].iloc[-days:], label="Actual")
 ax.plot(dates, preds, label="Predicted")
