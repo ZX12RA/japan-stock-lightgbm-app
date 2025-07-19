@@ -1,59 +1,60 @@
-import streamlit as st
-import pandas as pd
-import yfinance as yf
-import xgboost as xgb
-import matplotlib.pyplot as plt
 
-st.title("🇯🇵 日本株予測アプリ（XGBoost）")
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import matplotlib.pyplot as plt
+from xgboost import XGBRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+import datetime
+
+st.title("📈 日本株予測アプリ (XGBoost)")
+
+symbol = st.selectbox("銘柄コードを選択してください", ["7203.T", "6758.T", "9984.T", "9432.T", "8306.T"])
+days = st.slider("予測日数", 7, 90, 30)
 
 @st.cache_data
-def load_stock_data(ticker, period="5y"):
-    df = yf.download(ticker, period=period)
-    df.dropna(inplace=True)
-    return df
-
-def add_technical_indicators(df):
+def get_data(symbol):
+    df = yf.download(symbol, period="2y")
+    df = df[["Close"]]
+    df = df.dropna()
+    df["Return"] = df["Close"].pct_change()
+    df["MA5"] = df["Close"].rolling(window=5).mean()
     df["MA20"] = df["Close"].rolling(window=20).mean()
-    df["RSI"] = 100 - 100 / (1 + df["Close"].pct_change().rolling(window=14).mean())
-    df["EMA12"] = df["Close"].ewm(span=12, adjust=False).mean()
-    df["EMA26"] = df["Close"].ewm(span=26, adjust=False).mean()
-    df["MACD"] = df["EMA12"] - df["EMA26"]
-    df.dropna(inplace=True)
+    df["Std20"] = df["Close"].rolling(window=20).std()
+    df["Target"] = df["Close"].shift(-days)
+    df = df.dropna()
     return df
 
-def create_features(df):
-    features = df[["MA20", "RSI", "MACD"]]
-    target = df["Close"].shift(-1)
-    features = features[:-1]
-    target = target[:-1]
-    return features, target
+df = get_data(symbol)
 
-def train_and_predict(features, target, days):
-    X_train = features[:-days]
-    y_train = target[:-days]
-    X_test = features[-days:]
+def train_and_predict(df, days):
+    features = df[["Close", "Return", "MA5", "MA20", "Std20"]]
+    target = df["Target"]
 
-    model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100)
+    X_train, X_test, y_train, y_test = train_test_split(features, target, shuffle=False, test_size=0.2)
+
+    model = XGBRegressor(objective="reg:squarederror", n_estimators=100)
     model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
 
-    dates = features.index[-days:]
-    return dates, y_pred, model
+    future_input = features.iloc[-days:]
+    preds = model.predict(future_input)
 
-ticker = st.selectbox("銘柄を選択", ["7203.T", "6758.T", "9984.T", "9432.T", "8306.T"])
-df = load_stock_data(ticker)
-df = add_technical_indicators(df)
-features, target = create_features(df)
+    future_dates = pd.date_range(start=df.index[-1] + pd.Timedelta(days=1), periods=days, freq='B')
 
-days = st.slider("予測日数", 5, 60, 30)
-dates, preds, model = train_and_predict(features, target, days)
+    return df.index, df["Close"], future_dates, preds
 
-fig, ax = plt.subplots()
-ax.plot(df.index[-days:], df["Close"].iloc[-days:], label="Actual")
-ax.plot(dates, preds, label="Predicted")
-ax.set_title(f"{ticker} 株価予測")
+dates_past, close_past, future_dates, preds = train_and_predict(df, days)
+
+# グラフ表示
+fig, ax = plt.subplots(figsize=(12, 5))
+ax.plot(dates_past, close_past, label="過去実績", color="blue")
+ax.plot(future_dates, preds, label="未来予測", color="orange", linestyle="--")
+ax.axvline(future_dates[0], color="gray", linestyle="dotted", label="予測開始点")
+ax.set_title(f"{symbol} 株価予測（{days}営業日）")
+ax.set_xlabel("日付")
+ax.set_ylabel("終値")
 ax.legend()
+ax.grid(True)
+plt.xticks(rotation=45)
 st.pyplot(fig)
-
-st.subheader("📈 予測結果")
-st.dataframe(pd.DataFrame({"Date": dates, "Predicted": preds}).set_index("Date"))
