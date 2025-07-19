@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import lightgbm as lgb
+import xgboost as xgb
 import matplotlib.pyplot as plt
 
-st.title("🇯🇵 日本株予測アプリ（LightGBM）")
+st.title("🇯🇵 日本株予測アプリ（XGBoost）")
 
 @st.cache_data
 def load_stock_data(ticker, period="5y"):
@@ -29,19 +29,15 @@ def create_features(df):
     return features, target
 
 def train_and_predict(features, target, days):
-    X = features[:-days]
-    y = target[:-days]
-    X_train, X_test = X[:-days], X[-days:]
-    y_train, y_test = y[:-days], y[-days:]
+    X_train = features[:-days]
+    y_train = target[:-days]
+    X_test = features[-days:]
 
-    # 修正点: 明示的に DataFrame に変換
-    X_train = pd.DataFrame(X_train, columns=features.columns)
-    X_test = pd.DataFrame(X_test, columns=features.columns)
-
-    model = lgb.LGBMRegressor()
+    # XGBoost用にDMatrixへ変換
+    model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100)
     model.fit(X_train, y_train)
-
     y_pred = model.predict(X_test)
+
     dates = features.index[-days:]
     return dates, y_pred, model
 
@@ -53,7 +49,7 @@ features, target = create_features(df)
 days = st.slider("予測日数", 5, 60, 30)
 dates, preds, model = train_and_predict(features, target, days)
 
-# 可視化
+# グラフ描画
 fig, ax = plt.subplots()
 ax.plot(df.index[-days:], df["Close"].iloc[-days:], label="Actual")
 ax.plot(dates, preds, label="Predicted")
@@ -61,6 +57,5 @@ ax.set_title(f"{ticker} 株価予測")
 ax.legend()
 st.pyplot(fig)
 
-# データ表示
-st.subheader("📈 予測データ")
+st.subheader("📈 予測結果")
 st.dataframe(pd.DataFrame({"Date": dates, "Predicted": preds}).set_index("Date"))
