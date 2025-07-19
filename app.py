@@ -15,12 +15,12 @@ days = st.slider("予測営業日数", 1, 30, 7)
 def load_data(symbol):
     df = yf.download(symbol, period="3y")
     df = df.reset_index()
+    df = df[['Date', 'Close']].dropna()
     return df
 
 def prepare_features(df):
     df['Return'] = df['Close'].pct_change()
     df['Volatility'] = df['Return'].rolling(window=5).std()
-    df = df.dropna()
     df['Target'] = df['Close'].shift(-days)
     df = df.dropna()
     return df
@@ -51,6 +51,7 @@ fig.update_layout(
     yaxis_title="終値",
     hovermode="x unified",
     xaxis=dict(rangeslider=dict(visible=True), type="date"),
+    yaxis=dict(autorange=True),
     template="plotly_white"
 )
 
