@@ -1,6 +1,7 @@
 streamlit
 yfinance
-pandas
 xgboost
 scikit-learn
+matplotlib
+pandas
 plotly

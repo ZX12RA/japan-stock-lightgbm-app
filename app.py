@@ -1,49 +1,48 @@
-
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import plotly.graph_objects as go
+import yfinance as yf
 import xgboost as xgb
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+import plotly.graph_objects as go
+import numpy as np
 
-st.title("日本株 XGBoost 予測（スクロール可能グラフ）")
-
-symbol = st.selectbox("銘柄を選択", ["7203.T", "6758.T", "9984.T", "9432.T", "8306.T"])
-days = st.slider("予測営業日数", 1, 30, 7)
+st.title("日本株 予測アプリ（XGBoost版）")
+symbol = st.selectbox("銘柄コードを選択", ["7203.T", "6758.T", "9984.T", "9432.T", "8306.T"])
+days = st.slider("予測日数（営業日）", 5, 30, 15)
 
 @st.cache_data
 def load_data(symbol):
-    df = yf.download(symbol, period="3y")
-    df = df.reset_index()
-    df = df[['Date', 'Close']].dropna()
+    df = yf.download(symbol, period="1y")
+    df.dropna(inplace=True)
     return df
-
-def prepare_features(df):
-    df['Return'] = df['Close'].pct_change()
-    df['Volatility'] = df['Return'].rolling(window=5).std()
-    df['Target'] = df['Close'].shift(-days)
-    df = df.dropna()
-    return df
-
-def train_and_predict(df):
-    features = df[['Close', 'Return', 'Volatility']]
-    target = df['Target']
-    X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2, shuffle=False)
-    model = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=100)
-    model.fit(X_train, y_train)
-    future = features.iloc[-days:]
-    preds = model.predict(future)
-    return df['Date'].iloc[:-days], df['Close'].iloc[:-days], df['Date'].iloc[-days:], preds
 
 df = load_data(symbol)
-df = prepare_features(df)
+df["Target"] = df["Close"].shift(-days)
+df.dropna(inplace=True)
 
-dates_past, close_past, future_dates, preds = train_and_predict(df)
+features = df[["Open", "High", "Low", "Close", "Volume"]]
+target = df["Target"]
+
+X_train, X_test, y_train, y_test = train_test_split(features, target, shuffle=False, test_size=0.2)
+
+model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100)
+model.fit(X_train, y_train)
+
+preds = model.predict(X_test)
+
+# プロット用データ
+future_dates = pd.bdate_range(end=df.index[-1], periods=days + 1, closed="right")
+historical_close = df["Close"].iloc[-(days * 2):-days]
+historical_dates = df.index[-(days * 2):-days]
 
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=dates_past, y=close_past, mode='lines', name='過去実績', line=dict(color='blue')))
-fig.add_trace(go.Scatter(x=future_dates, y=preds, mode='lines', name='未来予測', line=dict(color='orange', dash='dash')))
-fig.add_vline(x=future_dates.iloc[0], line=dict(color='gray', dash='dot'))
+if len(historical_dates) == len(historical_close):
+    fig.add_trace(go.Scatter(x=historical_dates, y=historical_close, mode="lines", name="過去実績", line=dict(color="blue")))
+
+if len(future_dates) == len(preds[:days]):
+    fig.add_trace(go.Scatter(x=future_dates, y=preds[:days], mode="lines", name="未来予測", line=dict(color="orange", dash="dash")))
 
 fig.update_layout(
     title=f"{symbol} 株価予測（{days}営業日）",
@@ -51,7 +50,6 @@ fig.update_layout(
     yaxis_title="終値",
     hovermode="x unified",
     xaxis=dict(rangeslider=dict(visible=True), type="date"),
-    yaxis=dict(autorange=True),
     template="plotly_white"
 )
 
